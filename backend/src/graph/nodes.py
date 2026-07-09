@@ -3,7 +3,6 @@ import os
 import logging
 import re  # <--- Added Regex for cleaning
 from typing import Dict, Any, List
-
 # --- CHANGE 1: Swapped AzureChatOpenAI for standard ChatOpenAI ---
 from langchain_openai import ChatOpenAI, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import AzureSearch  #here pdf will get vectorised and will be stored
@@ -15,6 +14,8 @@ from backend.src.graph.state import VideoAuditState, ComplianceIssue
 
 # Import the Service
 from backend.src.services.video_indexer import VideoIndexerService
+
+from backend.src.services.cache_service import init_db, get_cached_video, save_to_cache
 
 # Configure Logger
 logger = logging.getLogger("brand-guardian")
@@ -34,6 +35,15 @@ def index_video_node(state: VideoAuditState) -> Dict[str, Any]:
     local_filename = "temp_audit_video.mp4" # this is where video gets downloaded locally before uploading to Azure Video Indexer
     
     try:
+        # Initialize SQLite Database Cache
+        init_db()
+
+        # Check Cache BEFORE hitting Azure or downloading via yt-dlp
+        cached_data = get_cached_video(video_url)
+        if cached_data:
+            logger.info(f"--- [Node: Indexer] Cache Hit for {video_url}. Bypassing Azure Processing! ---")
+            return cached_data
+
         vi_service = VideoIndexerService()   #instantiating the VideoIndexerService class to use its methods for video processing
         # We are going to use yt-dlp to download the video from Youtube ..yt-dlp is a free, open-source command-line tool that lets you download videos and audio from YouTube and 1000+ other websites.
         # 1. DOWNLOAD
@@ -57,6 +67,9 @@ def index_video_node(state: VideoAuditState) -> Dict[str, Any]:
         # 5. EXTRACT
         clean_data = vi_service.extract_data(raw_insights)
         
+        # Save to SQLite Database Cache AFTER successful extraction
+        save_to_cache(video_url, clean_data)
+
         logger.info("--- [Node: Indexer] Extraction Complete ---")
         return clean_data
 
@@ -68,7 +81,6 @@ def index_video_node(state: VideoAuditState) -> Dict[str, Any]:
             "transcript": "", 
             "ocr_text": []
         }
-    
 
  
 # --- NODE 2: THE COMPLIANCE AUDITOR ---
