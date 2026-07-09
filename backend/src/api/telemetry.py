@@ -9,6 +9,10 @@ from azure.monitor.opentelemetry import configure_azure_monitor
 logger = logging.getLogger("brand-guardian-telemetry")
 # Example log output: "brand-guardian-telemetry - INFO - Azure Monitor enabled"
 
+# Silence the chatty Azure HTTP policies
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+# Silence the OpenTelemetry exporter success messages
+logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(logging.WARNING)
 
 def setup_telemetry():
     """
