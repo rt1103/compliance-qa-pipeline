@@ -3,11 +3,14 @@ import os
 import logging
 import re  # <--- Added Regex for cleaning
 from typing import Dict, Any, List
+from urllib import response
 # --- CHANGE 1: Swapped AzureChatOpenAI for standard ChatOpenAI ---
 from langchain_openai import ChatOpenAI, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import AzureSearch  #here pdf will get vectorised and will be stored
 from langchain_core.prompts import ChatPromptTemplate #to define the prompt structure for LLM
 from langchain_core.messages import SystemMessage, HumanMessage
+from backend.src.services.llm_gateway import gateway_router
+import json
 
 # Import the State schema .
 from backend.src.graph.state import VideoAuditState, ComplianceIssue
@@ -100,13 +103,7 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
             "final_report": "Audit skipped because video processing failed (No Transcript)."
         }
 
-    # --- CHANGE 2: Route LLM to GitHub Models using your GITHUB_TOKEN ---
-    llm = ChatOpenAI(
-        model=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o"),
-        api_key=os.getenv("GITHUB_TOKEN"),
-        base_url="https://models.inference.ai.azure.com",
-        temperature=0.0
-    )
+ 
 
     # Embeddings stay on Azure (Free Tier)
     embeddings = AzureOpenAIEmbeddings(
@@ -164,13 +161,18 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
     """
    
     try:
-        response = llm.invoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_message)
-        ])
+        response = gateway_router.completion(
+            model="auditor-llm",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.0
+        )
         
         # --- FIX: Clean Markdown if present (```json ... ```) ---
-        content = response.content
+        content = response.choices[0].message.content
         if "```" in content:
             # Regex to find JSON inside code blocks
             content = re.search(r"```(?:json)?(.*?)```", content, re.DOTALL).group(1) # this line uses regex to extract the JSON content from the LLM response, ignoring any markdown formatting
@@ -188,8 +190,10 @@ def audit_content_node(state: VideoAuditState) -> Dict[str, Any]:
         
         # Safe lookup using standard dict get() to avoid UnboundLocal/NameError
         raw_response = locals().get("response")
-        if raw_response and hasattr(raw_response, "content"):
-            logger.error(f"Raw LLM Response: {raw_response.content}")
+        
+        # FIX: Check for LiteLLM/OpenAI structure (choices) instead of LangChain (content)
+        if raw_response and hasattr(raw_response, "choices"):
+            logger.error(f"Raw LLM Response: {raw_response.choices[0].message.content}")
         else:
             logger.error("Raw LLM Response: None (Inference failed before generating response)")
             
