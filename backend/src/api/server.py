@@ -11,6 +11,9 @@ from typing import List, Optional
 # ↑ Type hints for better code clarity and auto-completion
 
 
+from fastapi.responses import StreamingResponse # Add this
+import json
+
 # ========== STEP 1: LOAD ENVIRONMENT VARIABLES ==========
 # CRITICAL: Must happen BEFORE importing modules that need env vars
 from dotenv import load_dotenv
@@ -214,6 +217,90 @@ async def audit_video(request: AuditRequest):
         # }
 
 
+
+
+
+
+
+
+
+@app.post("/audit/stream")
+async def stream_audit(request: AuditRequest): 
+    # ========== GENERATE SESSION ID FOR STREAM ==========
+    session_id = str(uuid.uuid4())  
+    video_id_short = f"vid_{session_id[:8]}" 
+    
+    logger.info(f"Started Streaming Audit: {request.video_url} (Session: {session_id})")
+
+    # 1. Initialize the state to match your exact graph requirements
+    initial_state = {
+        "video_url": request.video_url, 
+        "video_id": video_id_short,     
+        "transcript": "",
+        "ocr_text": [],
+        "compliance_results": [],
+        "final_status": "PENDING",
+        "final_report": "",
+        "errors": []
+    }
+
+    # 2. Create an asynchronous generator for Server-Sent Events (SSE)
+    async def event_generator():
+        # Step 1: Initialization
+        yield f"data: {json.dumps({'stage': 'Initialization', 'status': 'Initializing compliance audit pipeline...'})}\n\n"
+        
+        try:
+            # Graph stream execution
+            for output in compliance_graph.stream(initial_state):
+                for node_name, node_state in output.items():
+                    
+                    # Step 2: Handle Video Indexing / Text Extraction Node
+                    if node_name == "video_indexer_node":
+                        event_data = {
+                            "stage": "Data Extraction",
+                            "status": "Video analysis complete. Transcript and on-screen text successfully extracted."
+                        }
+                    
+                    # Step 3: Handle The Compliance Auditor Node
+                    elif node_name == "audit_content_node":
+                        event_data = {
+                            "stage": "Compliance Audit",
+                            "status": "Audit complete. Evaluation report generated successfully.",
+                            "report": {
+                                "status": node_state.get("final_status"),
+                                "compliance_results": node_state.get("compliance_results", []),
+                                "final_report": node_state.get("final_report")
+                            }
+                        }
+                    
+                    # Fallback for any other unexpected nodes
+                    else:
+                        event_data = {
+                            "stage": "Processing",
+                            "status": f"Node {node_name} completed processing."
+                        }
+
+                    # Stream the clean, professional JSON down to the client
+                    yield f"data: {json.dumps(event_data)}\n\n"
+                    
+            # Send a final termination signal to the frontend
+            yield "data: [DONE]\n\n"
+            
+        except Exception as e:
+            error_data = {
+                "stage": "System Error", 
+                "status": "An error occurred during pipeline execution.", 
+                "message": str(e)
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+
+    # 3. THIS IS THE LINE THAT WAS MISSING! 
+    # Return the generator wrapped in a StreamingResponse
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+
+
 # ========== STEP 8: HEALTH CHECK ENDPOINT ==========
 @app.get("/health")
 # ↑ GET request at http://localhost:8000/health
@@ -237,6 +324,11 @@ def health_check():
     """
     return {"status": "healthy", "service": "Brand Guardian AI"}
     # FastAPI automatically converts dict to JSON response
+
+
+
+
+
 
 
 # ========== STEP 9: RUN INSTRUCTIONS (IN COMMENTS) ==========
