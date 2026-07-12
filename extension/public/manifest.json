@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Brand Guardian AI",
+  "version": "1.0",
+  "description": "Professional Compliance Audit Sidebar for YouTube",
+  "action": {
+    "default_title": "Open Audit Dashboard"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/watch*"],
+      "js": ["content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content.css"],
+      "matches": ["*://*.youtube.com/*"]
+    }
+  ],
+  "permissions": ["activeTab", "scripting"]
+}
