@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import List, Optional  
 # ↑ Type hints for better code clarity and auto-completion
 
+from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.responses import StreamingResponse # Add this
 import json
@@ -57,6 +58,14 @@ app = FastAPI(
 # - Interactive docs at http://localhost:8000/docs
 # - OpenAPI schema at http://localhost:8000/openapi.json
 
+# ========== ALLOW FRONTEND EXTENSION TO CALL API ==========
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins (good for local extension testing)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ========== STEP 6: DEFINE DATA MODELS (PYDANTIC) ==========
 
@@ -255,14 +264,14 @@ async def stream_audit(request: AuditRequest):
                 for node_name, node_state in output.items():
                     
                     # Step 2: Handle Video Indexing / Text Extraction Node
-                    if node_name == "video_indexer_node":
+                    if node_name == "indexer":  # <-- UPDATED NAME
                         event_data = {
                             "stage": "Data Extraction",
                             "status": "Video analysis complete. Transcript and on-screen text successfully extracted."
                         }
                     
                     # Step 3: Handle The Compliance Auditor Node
-                    elif node_name == "audit_content_node":
+                    elif node_name == "auditor":  # <-- UPDATED NAME
                         event_data = {
                             "stage": "Compliance Audit",
                             "status": "Audit complete. Evaluation report generated successfully.",
